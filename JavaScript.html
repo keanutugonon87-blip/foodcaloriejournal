@@ -1,0 +1,333 @@
+<script>
+(() => {
+  "use strict";
+
+  /* ---------- Theme ---------- */
+  const root = document.documentElement;
+  const THEME_KEY = "foodlogai_theme";
+  const applyTheme = (mode) => {
+    if (mode === "dark") root.setAttribute("data-theme", "dark");
+    else root.removeAttribute("data-theme");
+  };
+  const savedTheme = localStorage.getItem(THEME_KEY);
+  if (savedTheme) applyTheme(savedTheme);
+  else if (window.matchMedia("(prefers-color-scheme: dark)").matches) applyTheme("dark");
+
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const isDark = root.getAttribute("data-theme") === "dark";
+    const next = isDark ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+    if (trendChart) { trendChart.destroy(); trendChart = null; }
+    if (macroChart) { macroChart.destroy(); macroChart = null; }
+    renderCharts(lastDashboard);
+  });
+
+  /* ---------- Tabs ---------- */
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => { b.classList.remove("is-active"); b.setAttribute("aria-selected", "false"); });
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      btn.setAttribute("aria-selected", "true");
+      document.querySelector(`.tab-panel[data-panel="${btn.dataset.tab}"]`).classList.add("is-active");
+      if (btn.dataset.tab === "insights") renderCharts(lastDashboard);
+    });
+  });
+
+  /* ---------- Helpers ---------- */
+  function todayISOLocal() {
+    const d = new Date();
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  function fmtRange(min, max) {
+    return min === max ? `~${min} kcal` : `~${min}–${max} kcal`;
+  }
+
+  /* ---------- Chat rendering ---------- */
+  const streamEl = document.getElementById("stream");
+  const composer = document.getElementById("composer");
+  const inputEl = document.getElementById("food-input");
+  const askBtn = document.getElementById("ask-btn");
+
+  function scrollToEnd() {
+    streamEl.scrollTop = streamEl.scrollHeight;
+  }
+
+  function addUserMessage(text) {
+    const div = document.createElement("div");
+    div.className = "msg msg--user";
+    div.textContent = text;
+    streamEl.appendChild(div);
+    scrollToEnd();
+  }
+
+  function addLoadingMessage() {
+    const div = document.createElement("div");
+    div.className = "msg msg--ai msg--loading";
+    div.innerHTML = `<div class="ai-plain">Estimating<span class="dot-flicker"><span></span><span></span><span></span></span></div>`;
+    streamEl.appendChild(div);
+    scrollToEnd();
+    return div;
+  }
+
+  function addPlainAiMessage(text, isError) {
+    const div = document.createElement("div");
+    div.className = "msg msg--ai" + (isError ? " msg--error" : "");
+    div.innerHTML = `<div class="ai-plain"></div>`;
+    div.querySelector(".ai-plain").textContent = text;
+    streamEl.appendChild(div);
+    scrollToEnd();
+  }
+
+  function addReceiptMessage(dateLabel, items, note) {
+    const div = document.createElement("div");
+    div.className = "msg msg--ai";
+    const card = document.createElement("div");
+    card.className = "receipt-card";
+
+    const dateEl = document.createElement("p");
+    dateEl.className = "receipt-date";
+    dateEl.textContent = dateLabel;
+    card.appendChild(dateEl);
+
+    items.forEach((it) => {
+      const line = document.createElement("div");
+      line.className = "receipt-line";
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "food-name";
+      nameSpan.innerHTML = `${it.emoji || ""} ${it.label}${it.qtyLabel ? ` <span class="qty">(${it.qtyLabel})</span>` : ""}`;
+      const kcalSpan = document.createElement("span");
+      kcalSpan.className = "kcal";
+      kcalSpan.textContent = fmtRange(it.min, it.max);
+      line.appendChild(nameSpan);
+      line.appendChild(kcalSpan);
+      card.appendChild(line);
+    });
+
+    if (items.length > 1) {
+      const totalMin = items.reduce((s, i) => s + i.min, 0);
+      const totalMax = items.reduce((s, i) => s + i.max, 0);
+      const totalRow = document.createElement("div");
+      totalRow.className = "receipt-total";
+      totalRow.innerHTML = `<span>Estimated total</span><span class="kcal">${fmtRange(totalMin, totalMax)}</span>`;
+      card.appendChild(totalRow);
+    }
+
+    if (note) {
+      const noteEl = document.createElement("p");
+      noteEl.className = "receipt-note";
+      noteEl.textContent = note;
+      card.appendChild(noteEl);
+    }
+
+    div.appendChild(card);
+    streamEl.appendChild(div);
+    scrollToEnd();
+  }
+
+  /* ---------- Dashboard rendering ---------- */
+  const logBody = document.getElementById("log-body");
+  const emptyState = document.getElementById("empty-state");
+  const logTable = document.getElementById("log-table");
+  const todayTotalEl = document.getElementById("today-total");
+
+  let lastDashboard = null;
+  let trendChart = null;
+  let macroChart = null;
+
+  function renderDashboard(dashboard) {
+    lastDashboard = dashboard;
+
+    // Log table
+    logBody.innerHTML = "";
+    if (!dashboard.log.length) {
+      logTable.style.display = "none";
+      emptyState.style.display = "block";
+    } else {
+      logTable.style.display = "table";
+      emptyState.style.display = "none";
+      dashboard.log.forEach((day) => {
+        day.rows.forEach((r, idx) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${idx === 0 ? day.dateLabel : ""}</td>
+            <td class="food-col">${r.emoji || ""} ${r.food}${r.qtyLabel ? ` (${r.qtyLabel})` : ""}</td>
+            <td class="num">${fmtRange(r.min, r.max)}</td>
+          `;
+          logBody.appendChild(tr);
+        });
+        const totalTr = document.createElement("tr");
+        totalTr.className = "day-total";
+        totalTr.innerHTML = `<td></td><td class="food-col">Day total</td><td class="num">${fmtRange(day.dayMin, day.dayMax)}</td>`;
+        logBody.appendChild(totalTr);
+      });
+    }
+
+    // Today's total strip
+    todayTotalEl.textContent = fmtRange(dashboard.todayTotal.min, dashboard.todayTotal.max);
+
+    // Quick stats
+    document.getElementById("stat-avg").textContent = dashboard.stats.avgDailyCalories ? `${dashboard.stats.avgDailyCalories}` : "—";
+    document.getElementById("stat-days").textContent = dashboard.stats.daysLogged || "0";
+    document.getElementById("stat-streak").textContent = dashboard.stats.streak ? `${dashboard.stats.streak} 🔥` : "0";
+    document.getElementById("stat-top").textContent = dashboard.stats.topFood || "—";
+
+    // Charts only if Insights tab is visible (avoids 0-height canvas issue)
+    if (document.querySelector('.tab-panel[data-panel="insights"]').classList.contains("is-active")) {
+      renderCharts(dashboard);
+    }
+  }
+
+  function chartColors() {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      herb: styles.getPropertyValue("--herb").trim(),
+      citrus: styles.getPropertyValue("--citrus").trim(),
+      plum: styles.getPropertyValue("--plum").trim(),
+      line: styles.getPropertyValue("--line").trim(),
+      ink: styles.getPropertyValue("--ink").trim(),
+      inkSoft: styles.getPropertyValue("--ink-soft").trim(),
+    };
+  }
+
+  function renderCharts(dashboard) {
+    if (!dashboard || !window.Chart) return;
+    const colors = chartColors();
+
+    // Trend chart
+    const trendCtx = document.getElementById("trend-chart");
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(trendCtx, {
+      type: "bar",
+      data: {
+        labels: dashboard.trend.map((t) => t.label),
+        datasets: [{
+          data: dashboard.trend.map((t) => t.avg),
+          backgroundColor: colors.herb,
+          borderRadius: 6,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: colors.inkSoft, font: { family: "IBM Plex Mono", size: 11 } } },
+          y: { beginAtZero: true, grid: { color: colors.line }, ticks: { color: colors.inkSoft, font: { family: "IBM Plex Mono", size: 10 } } },
+        },
+      },
+    });
+
+    // Macro donut
+    const macroCtx = document.getElementById("macro-chart");
+    const { protein, carbs, fat } = dashboard.macroToday;
+    const total = protein + carbs + fat;
+    if (macroChart) macroChart.destroy();
+    macroChart = new Chart(macroCtx, {
+      type: "doughnut",
+      data: {
+        labels: ["Protein", "Carbs", "Fat"],
+        datasets: [{
+          data: total ? [protein, carbs, fat] : [1, 1, 1],
+          backgroundColor: total ? [colors.herb, colors.citrus, colors.plum] : [colors.line, colors.line, colors.line],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "68%",
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    const legend = document.getElementById("macro-legend");
+    legend.innerHTML = `
+      <span class="macro-legend-item"><span class="macro-legend-dot" style="background:${colors.herb}"></span>Protein ${protein}g</span>
+      <span class="macro-legend-item"><span class="macro-legend-dot" style="background:${colors.citrus}"></span>Carbs ${carbs}g</span>
+      <span class="macro-legend-item"><span class="macro-legend-dot" style="background:${colors.plum}"></span>Fat ${fat}g</span>
+    `;
+  }
+
+  /* ---------- Clear history ---------- */
+  document.getElementById("clear-history").addEventListener("click", () => {
+    if (!lastDashboard || !lastDashboard.log.length) return;
+    if (!confirm("Clear your entire food history? This can't be undone.")) return;
+    google.script.run
+      .withSuccessHandler((dashboard) => renderDashboard(dashboard))
+      .withFailureHandler((err) => addPlainAiMessage("Couldn't clear history: " + err.message, true))
+      .clearHistoryAndRefresh(todayISOLocal());
+  });
+
+  /* ---------- Submit handling ---------- */
+  function handleSubmit(text) {
+    addUserMessage(text);
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+    askBtn.disabled = true;
+
+    const loading = addLoadingMessage();
+
+    google.script.run
+      .withSuccessHandler((result) => {
+        loading.remove();
+        askBtn.disabled = false;
+
+        if (result.type === "empty") {
+          addPlainAiMessage("I couldn't find any food in that — try naming what you ate, like \u201Ctwo eggs and toast.\u201D");
+          renderDashboard(result.dashboard);
+          return;
+        }
+        if (result.type === "query") {
+          if (!result.items.length) {
+            addPlainAiMessage(`No entries logged for ${result.dateLabel} yet.`);
+          } else {
+            addReceiptMessage(result.dateLabel, result.items, null);
+          }
+          renderDashboard(result.dashboard);
+          return;
+        }
+        // type === "logged"
+        addReceiptMessage(result.dateLabel, result.items, result.note);
+        renderDashboard(result.dashboard);
+      })
+      .withFailureHandler((err) => {
+        loading.remove();
+        askBtn.disabled = false;
+        addPlainAiMessage("Something went wrong estimating that. Please try again.", true);
+        console.error(err);
+      })
+      .submitFoodEntry(text, todayISOLocal());
+  }
+
+  composer.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = inputEl.value.trim();
+    if (!text) return;
+    handleSubmit(text);
+  });
+
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      composer.requestSubmit();
+    }
+  });
+
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  });
+
+  /* ---------- Init ---------- */
+  addPlainAiMessage("Tell me what you ate and I\u2019ll estimate the calories \u2014 e.g. \u201C2 cups of rice and fried chicken today.\u201D");
+
+  google.script.run
+    .withSuccessHandler((dashboard) => renderDashboard(dashboard))
+    .withFailureHandler((err) => addPlainAiMessage("Couldn't load your food log: " + err.message, true))
+    .getDashboardData(todayISOLocal());
+})();
+</script>

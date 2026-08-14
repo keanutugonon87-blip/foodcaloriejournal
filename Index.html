@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<?!= include('Stylesheet'); ?>
+</head>
+<body>
+
+  <div class="tape">
+
+    <!-- ===== Header (receipt letterhead) ===== -->
+    <header class="header">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <p class="eyebrow">POWERED BY GOOGLE SHEETS · NO. 002</p>
+      <h1 class="wordmark">FoodLog <span>AI</span></h1>
+      <p class="subtitle">Ask about your food. Track your calories.</p>
+    </header>
+
+    <!-- ===== Tab switcher ===== -->
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn is-active" data-tab="log" role="tab" aria-selected="true">Log</button>
+      <button class="tab-btn" data-tab="insights" role="tab" aria-selected="false">Insights</button>
+    </nav>
+
+    <!-- =========================================================
+         TAB: LOG
+    ========================================================== -->
+    <section class="tab-panel is-active" data-panel="log">
+
+      <main class="pad">
+        <section class="stream" id="stream" aria-live="polite" aria-label="Conversation"></section>
+
+        <form class="composer" id="composer" autocomplete="off">
+          <textarea id="food-input" class="composer-input" placeholder="What did you eat today?" rows="1" aria-label="Describe what you ate"></textarea>
+          <button type="submit" class="ask-btn" id="ask-btn">
+            <span class="ask-btn-label">Ask AI</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ask-btn-icon"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+        <p class="hint">Try: "2 cups of rice and fried chicken today" or "what did I eat yesterday?"</p>
+      </main>
+
+      <div class="perf" aria-hidden="true"></div>
+
+      <section class="total-strip" id="total-strip">
+        <span class="total-label">Today's total</span>
+        <span class="total-value" id="today-total">0 kcal</span>
+      </section>
+
+      <div class="perf" aria-hidden="true"></div>
+
+      <section class="log">
+        <div class="log-head">
+          <h2>Food History</h2>
+          <button id="clear-history" class="clear-btn">Clear history</button>
+        </div>
+
+        <div class="log-table-wrap">
+          <table class="log-table" id="log-table">
+            <thead>
+              <tr><th>Date</th><th>Food</th><th class="num">Calories</th></tr>
+            </thead>
+            <tbody id="log-body"></tbody>
+          </table>
+        </div>
+        <p class="empty-state" id="empty-state">Nothing logged yet — ask the AI what you ate and it'll show up here.</p>
+      </section>
+    </section>
+
+    <!-- =========================================================
+         TAB: INSIGHTS
+    ========================================================== -->
+    <section class="tab-panel" data-panel="insights">
+      <section class="insights">
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">Avg daily calories</span>
+            <span class="stat-value" id="stat-avg">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Days logged</span>
+            <span class="stat-value" id="stat-days">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Current streak</span>
+            <span class="stat-value" id="stat-streak">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Most logged food</span>
+            <span class="stat-value stat-value--small" id="stat-top">—</span>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>7-day calorie trend</h3>
+          <div class="chart-wrap">
+            <canvas id="trend-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>Today's macro split</h3>
+          <div class="chart-wrap chart-wrap--donut">
+            <canvas id="macro-chart"></canvas>
+          </div>
+          <div class="macro-legend" id="macro-legend"></div>
+        </div>
+
+      </section>
+    </section>
+
+    <footer class="footer">
+      <p>Estimates only — actual calories vary by serving size, ingredients, and preparation. Not medical or nutritional advice.</p>
+    </footer>
+
+  </div>
+
+<?!= include('JavaScript'); ?>
+</body>
+</html>
